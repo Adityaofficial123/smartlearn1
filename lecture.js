@@ -346,33 +346,53 @@ function displayLecture(lecture, videoContainer, moduleIndex, lectureIndex) {
   videoContainer.appendChild(lectureTitle);
 
   // Google Drive video detection
-  if (lecture.videoUrl && lecture.videoUrl.includes('drive.google.com')) {
+  // Google Drive video detection with pop-out blocker
+if (lecture.videoUrl && lecture.videoUrl.includes('drive.google.com')) {
     const match = lecture.videoUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (match && match[1]) {
-      const fileId = match[1];
-      const iframe = document.createElement('iframe');
-      iframe.src = `https://drive.google.com/file/d/${fileId}/preview`;
-      iframe.width = "100%";
-      iframe.height = "480";
-      iframe.allow = "autoplay";
-      iframe.allowFullscreen = true;
-      iframe.frameBorder = "0";
-      iframe.className = "rounded-lg shadow-md";
-      
-      const wrapper = document.createElement('div');
-      wrapper.className = "flex justify-center w-full";
-      wrapper.appendChild(iframe);
-      videoContainer.appendChild(wrapper);
-      videoContainer.classList.remove('hidden');
-      
-      // Add completion button after video
-      addCompletionButton(videoContainer, moduleIndex, lectureIndex);
-      return;
+        const fileId = match[1];
+        
+        // Create iframe
+        const iframe = document.createElement('iframe');
+        iframe.src = `https://drive.google.com/file/d/${fileId}/preview`;
+        iframe.width = "100%";
+        iframe.height = "480";
+        iframe.allow = "autoplay";
+        iframe.allowFullscreen = true;
+        iframe.frameBorder = "0";
+        iframe.className = "rounded-lg shadow-md";
+
+        // Create wrapper
+        const wrapper = document.createElement('div');
+        wrapper.className = "flex justify-center w-full";
+        wrapper.style.position = "relative"; // allow overlay positioning
+        wrapper.appendChild(iframe);
+
+        // Create overlay to hide pop-out button
+        const overlay = document.createElement('div');
+        overlay.style.position = "absolute";
+        overlay.style.top = "0";
+        overlay.style.right = "0";
+        overlay.style.width = "60px"; // adjust size if needed
+        overlay.style.height = "60px";
+        overlay.style.backgroundColor = "white"; // match background to hide icon
+        overlay.style.zIndex = "10";
+        overlay.style.pointerEvents = "auto"; // block clicks
+
+        wrapper.appendChild(overlay);
+
+        videoContainer.appendChild(wrapper);
+        videoContainer.classList.remove('hidden');
+
+        // Add completion button
+        addCompletionButton(videoContainer, moduleIndex, lectureIndex);
+        return;
     } else {
-      videoContainer.innerHTML += "<p class='text-red-600'>Invalid Google Drive URL</p>";
-      return;
+        videoContainer.innerHTML += "<p class='text-red-600'>Invalid Google Drive URL</p>";
+        return;
     }
-  }
+}
+
 
   // Cloudinary video detection
   if (lecture.videoUrl && lecture.videoUrl.includes('res.cloudinary.com')) {

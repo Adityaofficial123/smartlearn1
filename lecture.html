@@ -56,6 +56,11 @@
             padding: 0 2px;
             border-radius: 2px;
         }
+        #video-container {
+            max-width: 800px;
+            margin: auto;
+            height: auto;
+        }
         @media (max-width: 768px) {
             .sidebar {
                 transform: translateX(-100%);
@@ -103,7 +108,7 @@
     </div>
 
     <!-- Main Content -->
-    <main id="course-player-content" class="hidden pt-16 min-h-screen flex">
+    <main id="course-player-content" class="pt-16 min-h-screen flex">
         <!-- Enhanced Sidebar -->
         <aside class="sidebar w-full md:w-96 bg-white shadow-xl fixed md:relative z-40 h-screen md:h-auto">
             <!-- Course Header -->
@@ -273,7 +278,7 @@
     </main>
 
     <!-- Note Taking Modal -->
-    <div id="notes-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div id="notes-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-full overflow-hidden">
             <div class="p-6 border-b flex items-center justify-between">
                 <h3 class="text-xl font-bold">Take Notes</h3>
@@ -305,7 +310,13 @@
     let userNotes = {};
 
     document.addEventListener('DOMContentLoaded', () => {
-        console.log('Enhanced lecture page loaded');
+        // Ensure notes modal is hidden on page load
+        const notesModal = document.getElementById('notes-modal');
+        if (notesModal) {
+            notesModal.classList.add('hidden');
+        }
+
+        // Initialize event listeners
         initializeEventListeners();
         waitForAuth();
     });
@@ -453,7 +464,7 @@
             <div class="text-center py-20">
                 <div class="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
                     <svg class="w-10 h-10 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
                     </svg>
                 </div>
                 <h2 class="text-2xl font-bold text-gray-900 mb-4">Enrollment Required</h2>
@@ -528,7 +539,7 @@
                             class="w-full text-left flex items-center justify-between py-2 font-semibold text-gray-800 hover:text-blue-600 transition-colors">
                         <div class="flex items-center">
                             <svg class="w-5 h-5 mr-3 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4l2 2h4a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd"></path>
+                                <path fill-rule="evenodd" d="M2 6a2 2 0 002-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd"></path>
                             </svg>
                             <span>${module.title}</span>
                         </div>
@@ -559,7 +570,7 @@
             <div class="lectures-section">
                 <h4 class="text-sm font-semibold text-gray-600 mb-2 flex items-center">
                     <svg class="w-4 h-4 mr-2 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"></path>
+                        <path d="M2 6a2 2 0 002-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"></path>
                     </svg>
                     Lectures (${lectures.length})
                 </h4>
@@ -589,7 +600,6 @@
                                 <div class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                                         <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
-                                    </svg>
                                 </div>
                             </div>
                         `;
@@ -715,7 +725,7 @@
                 <div class="aspect-video bg-gray-100 rounded-lg flex items-center justify-center">
                     <div class="text-center">
                         <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"></path>
+                            <path d="M2 6a2 2 0 002-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"></path>
                         </svg>
                         <p class="text-gray-500">No video available for this lecture</p>
                     </div>
@@ -743,7 +753,7 @@
                 </svg>
                 Mark as Completed
             `;
-            completeBtn.className = 'bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors font-semibold flex items-center cursor-pointer';
+            completeBtn.className = 'bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors font-semibold flex items-center';
             completeBtn.onclick = () => markLectureCompleted(moduleIndex, lectureIndex);
         }
         
@@ -765,6 +775,7 @@
                             allow="autoplay" 
                             allowfullscreen>
                     </iframe>
+                    
                 </div>
             `;
         } else {

@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <link rel="stylesheet" href="style.css">
     <style>
@@ -207,7 +208,6 @@
 
     <!-- Load scripts in correct order -->
     <script src="firebase.js"></script>
-    <script src="script.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             let currentCourse = null;
@@ -222,6 +222,9 @@
                 window.location.href = 'courses.html';
                 return;
             }
+
+            // Expose handler to window in the same scope to support inline onclick as fallback
+            window.handlePaidEnrollmentSubmit = handlePaidEnrollmentSubmit;
 
             function waitForFirebaseInit(callback) {
                 const interval = setInterval(() => {
@@ -301,7 +304,7 @@
                         priceElement.textContent = 'Free';
                         priceElement.className = 'text-3xl font-bold text-green-600';
                     } else {
-                        priceElement.textContent = `$${course.price || '0'}`;
+                        priceElement.textContent = `₹${course.price || '0'}`;
                         priceElement.className = 'text-3xl font-bold text-blue-600';
                     }
 
@@ -389,16 +392,92 @@
                 }
             }
 
+            // ===== Auth/UI helpers for this page =====
+            function showLoginModal() {
+                const modal = document.getElementById('login-modal');
+                if (modal) modal.classList.remove('hidden');
+            }
+            function hideLoginModal() {
+                const modal = document.getElementById('login-modal');
+                if (modal) modal.classList.add('hidden');
+            }
+            function updateAuthUI(user) {
+                const authButtons = document.getElementById('auth-buttons');
+                const userInfo = document.getElementById('user-info');
+                const userName = document.getElementById('user-name');
+                if (user) {
+                    hideLoginModal();
+                    if (authButtons) authButtons.classList.add('hidden');
+                    if (userInfo) userInfo.classList.remove('hidden');
+                    if (userName) userName.textContent = user.displayName || user.email;
+                } else {
+                    if (authButtons) authButtons.classList.remove('hidden');
+                    if (userInfo) userInfo.classList.add('hidden');
+                }
+            }
+
+            async function handleGoogleLoginClick() {
+                try {
+                    if (window.authManager) {
+                        await window.authManager.signInWithGoogle();
+                        return;
+                    }
+                    // Fallback to compat API if needed
+                    const provider = new firebase.auth.GoogleAuthProvider();
+                    provider.addScope('email');
+                    provider.addScope('profile');
+                    provider.setCustomParameters({ prompt: 'select_account' });
+                    try {
+                        await firebase.auth().signInWithPopup(provider);
+                    } catch (popupErr) {
+                        const fallbackCodes = ['auth/popup-blocked','auth/operation-not-supported-in-this-environment','auth/cancelled-popup-request'];
+                        if (popupErr && fallbackCodes.includes(popupErr.code)) {
+                            await firebase.auth().signInWithRedirect(provider);
+                            return;
+                        }
+                        throw popupErr;
+                    }
+                } catch (e) {
+                    console.error('Google login failed:', e);
+                    if (location.protocol === 'file:') alert('Please run over http://localhost to sign in.');
+                }
+            }
+
+            function bindAuthButtons() {
+                const loginBtn = document.getElementById('login-btn');
+                const googleLogin = document.getElementById('google-login');
+                const closeModal = document.getElementById('close-modal');
+                const logoutBtn = document.getElementById('logout-btn');
+                if (loginBtn) loginBtn.addEventListener('click', showLoginModal);
+                if (googleLogin) googleLogin.addEventListener('click', handleGoogleLoginClick);
+                if (closeModal) closeModal.addEventListener('click', hideLoginModal);
+                if (logoutBtn) logoutBtn.addEventListener('click', async () => {
+                    try {
+                        if (window.authManager) await window.authManager.signOut();
+                        else await firebase.auth().signOut();
+                    } catch (e) { console.error('Logout failed:', e); }
+                });
+            }
+
             // Set up authentication listener
             function setupAuthListener() {
-                firebase.auth().onAuthStateChanged(user => {
+                const subscribe = (cb) => {
+                    if (window.authManager && typeof window.authManager.onAuthStateChanged === 'function') {
+                        window.authManager.onAuthStateChanged(cb);
+                        return true;
+                    }
+                    if (firebase && firebase.auth) {
+                        firebase.auth().onAuthStateChanged(cb);
+                        return true;
+                    }
+                    return false;
+                };
+
+                subscribe(user => {
                     console.log('Auth state changed:', user ? user.email : 'No user');
                     currentUser = user;
                     window.currentUser = user;
-                    
-                    // Update UI based on auth state
                     updateAuthUI(user);
-                    
                     if (user && currentCourse) {
                         enableEnrollBtn();
                         checkEnrollmentStatus();
@@ -406,6 +485,135 @@
                         disableEnrollBtn();
                     }
                 });
+            }
+
+            // Helpers: Paid enrollment modal
+            function showPaidEnrollModal() {
+                document.getElementById('paid-enroll-modal').classList.remove('hidden');
+                // Ensure the submit button is bound
+                const btn = document.getElementById('paid-submit-btn');
+                if (btn && !btn.dataset.bound) {
+                    btn.addEventListener('click', handlePaidEnrollmentSubmit);
+                    btn.dataset.bound = '1';
+                }
+            }
+            function hidePaidEnrollModal() {
+                document.getElementById('paid-enroll-modal').classList.add('hidden');
+                // reset form
+                const form = document.getElementById('paid-enroll-form');
+                if (form) form.reset();
+                const status = document.getElementById('paid-status');
+                if (status) { status.textContent = ''; status.className = 'text-sm mt-2 text-gray-600'; }
+            }
+
+            async function handlePaidEnrollmentSubmit() {
+                const submitBtn = document.getElementById('paid-submit-btn');
+                const fileInput = document.getElementById('payment-proof');
+                const mobileInput = document.getElementById('mobile-number');
+                const statusEl = document.getElementById('paid-status');
+
+                if (!currentUser) { showLoginModal(); return; }
+                if (!currentCourse) { alert('Course not loaded.'); return; }
+
+                // Validate inputs
+                const file = fileInput.files && fileInput.files[0];
+                const mobile = (mobileInput.value || '').trim();
+                const mobileRegex = /^\d{10}$/; // allow any 10 digits to simplify
+                statusEl.className = 'text-sm mt-2 text-gray-600';
+                statusEl.textContent = '';
+                if (!file) { statusEl.className = 'text-sm mt-2 text-red-600'; statusEl.textContent = 'Please upload a payment proof image.'; return; }
+                if (!/^image\//.test(file.type)) { statusEl.className = 'text-sm mt-2 text-red-600'; statusEl.textContent = 'Only image files are allowed.'; return; }
+                if (file.size > 5 * 1024 * 1024) { statusEl.className = 'text-sm mt-2 text-red-600'; statusEl.textContent = 'Image must be under 5MB.'; return; }
+                if (!mobileRegex.test(mobile)) { statusEl.className = 'text-sm mt-2 text-red-600'; statusEl.textContent = 'Enter a valid 10-digit mobile number.'; return; }
+
+                // Cloudinary config
+                const cloudName = window.CLOUDINARY_CLOUD_NAME || '';
+                const uploadPreset = window.CLOUDINARY_UPLOAD_PRESET || '';
+                if (!cloudName || !uploadPreset) {
+                    statusEl.className = 'text-sm mt-2 text-red-600';
+                    statusEl.textContent = 'Cloudinary not configured. Please set window.CLOUDINARY_CLOUD_NAME and window.CLOUDINARY_UPLOAD_PRESET in a script tag.';
+                    console.error('Missing Cloudinary config');
+                    return;
+                }
+
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Submitting...';
+                statusEl.textContent = 'Uploading proof...';
+
+                try {
+                    // Upload to Cloudinary
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('upload_preset', uploadPreset);
+                    // Do not send 'folder' to avoid preset restrictions; Cloudinary can still organize by default
+                    const resp = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    if (!resp.ok) {
+                        const txt = await resp.text();
+                        // Show helpful hint for common 401/Unknown API key due to signed preset
+                        if (resp.status === 401 && txt.includes('Unknown API key')) {
+                            statusEl.className = 'text-sm mt-2 text-red-600';
+                            statusEl.textContent = 'Cloudinary preset likely requires signing. Edit preset "apnacourse" and set Signing Mode to Unsigned.';
+                        }
+                        throw new Error('Cloudinary upload failed: ' + txt);
+                    }
+                    const data = await resp.json();
+                    const proofUrl = data.secure_url;
+
+                    // Ensure Firebase RTDB is initialized before saving
+                    statusEl.textContent = 'Preparing to save...';
+                    if (!window.firebaseServicesInitialized || !window.rtdb || !window.rtdb()) {
+                        let attempts = 0;
+                        await new Promise((resolve) => {
+                            const intv = setInterval(() => {
+                                if (window.firebaseServicesInitialized && window.rtdb && window.rtdb()) {
+                                    clearInterval(intv);
+                                    resolve();
+                                } else if (++attempts > 50) { // ~5 seconds
+                                    clearInterval(intv);
+                                    resolve();
+                                }
+                            }, 100);
+                        });
+                    }
+
+                    statusEl.textContent = 'Saving submission...';
+
+                    // Save to RTDB pending
+                    const payload = {
+                        userId: currentUser.uid,
+                        courseId: currentCourse.id,
+                        mobile: mobile,
+                        proofUrl,
+                        userName: currentUser.displayName || 'Student',
+                        userEmail: currentUser.email || ''
+                    };
+                    await window.DatabaseAPI.submitPaidEnrollmentProof(payload);
+
+                    // Show countdown message
+                    const countdownEl = document.getElementById('paid-countdown');
+                    let remaining = 10; // seconds
+                    document.getElementById('paid-success').classList.remove('hidden');
+                    statusEl.textContent = '';
+                    const timer = setInterval(() => {
+                        countdownEl.textContent = `${remaining}s`;
+                        remaining -= 1;
+                        if (remaining < 0) {
+                            clearInterval(timer);
+                            hidePaidEnrollModal();
+                        }
+                    }, 1000);
+
+                } catch (err) {
+                    console.error('Paid enrollment submission failed:', err);
+                    statusEl.className = 'text-sm mt-2 text-red-600';
+                    statusEl.textContent = 'Submission failed: ' + (err && err.message ? err.message : 'Unknown error');
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit for Review';
+                }
             }
 
             // Set up enroll button event listener
@@ -423,7 +631,13 @@
                         return;
                     }
 
-                    // Disable button and show loading state
+                    // Paid course -> show paid modal
+                    if (Number(currentCourse.price || 0) > 0) {
+                        showPaidEnrollModal();
+                        return;
+                    }
+
+                    // Free course immediate enrollment
                     enrollBtn.disabled = true;
                     enrollBtn.textContent = 'Enrolling...';
 
@@ -481,6 +695,7 @@
                 const interval = setInterval(() => {
                     if (window.firebaseServicesInitialized) {
                         clearInterval(interval);
+                        bindAuthButtons();
                         setupAuthListener();
                         setupEnrollButton();
                         loadCourseDetails();
@@ -493,5 +708,41 @@
             waitForFirebaseAndSetup();
         });
     </script>
+
+    <!-- Paid Enrollment Modal -->
+    <div id="paid-enroll-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-lg p-6 md:p-8 max-w-lg w-full mx-4 relative">
+            <button onclick="(function(){document.getElementById('paid-enroll-modal').classList.add('hidden')})()" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700">✕</button>
+            <h2 class="text-2xl font-bold mb-4 text-center">Enroll via UPI</h2>
+            <div class="space-y-4">
+                <div class="text-center">
+                    <img id="upi-qr" src="upi-qr.png" alt="UPI QR" class="mx-auto w-48 h-48 object-contain border rounded" />
+                    <div class="mt-2 text-sm">UPI ID: <span id="upi-id" class="font-semibold">dipaktaywade3@okaxis</span></div>
+                </div>
+                <form id="paid-enroll-form" onsubmit="event.preventDefault();" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Payment Proof (screenshot) <span class="text-red-500">*</span></label>
+                        <input id="payment-proof" type="file" accept="image/*" class="w-full border rounded px-3 py-2" required />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Mobile Number <span class="text-red-500">*</span></label>
+                        <input id="mobile-number" type="tel" inputmode="numeric" pattern="\d{10}" placeholder="10-digit mobile" class="w-full border rounded px-3 py-2" required />
+                    </div>
+                    <div class="text-sm mt-2 text-gray-600" id="paid-status"></div>
+                    <div id="paid-success" class="hidden p-3 rounded bg-blue-50 text-blue-700 text-sm">
+                        Your proof is under review. After successful review, you will get access to the course on SmartLearn. Closing in <span id="paid-countdown">10s</span>...
+                    </div>
+                    <button id="paid-submit-btn" type="button" class="w-full bg-blue-600 text-white py-3 rounded font-semibold hover:bg-blue-700" onclick="(function(){ if (window.handlePaidEnrollmentSubmit) { window.handlePaidEnrollmentSubmit(); } })()">Submit for Review</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Cloudinary config (from your screenshot)
+        window.CLOUDINARY_CLOUD_NAME = 'dxwhobraz'; // exact cloud name
+        window.CLOUDINARY_UPLOAD_PRESET = 'apnacourse'; // unsigned preset you created
+      </script>
+      
 </body>
 </html>
